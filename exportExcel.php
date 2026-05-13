@@ -63,7 +63,7 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 $headerStyle = [
     'font' => [
         'bold' => true,
-        'size' => 16,
+        'size' => 13,
         'color' => ['argb' => 'FFFFFFFF']
     ],
     'fill' => [
@@ -79,7 +79,7 @@ $headerStyle = [
 
 $bodyStyle = [
     'font' => [
-        'size' => 13,
+        'size' => 12,
         'color' => [],
     ],
     'alignment' => [
@@ -93,6 +93,26 @@ $bodyStyle = [
     ]
 ];
 
+/**
+ * @throws Exception
+ */
+
+function currice($positionX, $positionY, $celda): void
+{
+    global $sheetName, $sheet, $indiceX;
+    if (!is_numeric($celda)) {
+        throw new Exception("\nthe sheet:$sheetName\nPosition:[" . ($positionY - 1) . "][$indiceX]\nvalue:$celda[0] is not numeric");
+    }
+
+    $sheet->setCellValueExplicit($positionX . $positionY + 1, $celda, DataType::TYPE_NUMERIC);
+    $sheet->getStyle($positionX . $positionY + 1)
+        ->getNumberFormat()
+        ->setFormatCode('"$ "#,##0.00');
+}
+
+/**
+ * @throws Exception
+ */
 function CreateExcel(Worksheet $sheet, $dataArraySheet): void
 {
     global $titulo, $headerStyle, $bodyStyle, $indice, $fillter;
@@ -123,7 +143,7 @@ function CreateExcel(Worksheet $sheet, $dataArraySheet): void
         ->applyFromArray([
             'font' => [
                 'bold' => true,
-                'size' => 19,
+                'size' => 13,
                 'color' => ['argb' => 'FFFFFFFF'],
             ],
             'alignment' => [
@@ -175,7 +195,7 @@ function CreateExcel(Worksheet $sheet, $dataArraySheet): void
         }
         $indexY += 2;
 
-        foreach ($rowValues as $celda) {
+        foreach ($rowValues as $indiceX => $celda) {
             $indexXtemp += 1;
             $columIndex = Coordinate::stringFromColumnIndex($indexXtemp);
             if (is_scalar($celda)) {
@@ -185,11 +205,17 @@ function CreateExcel(Worksheet $sheet, $dataArraySheet): void
 
             if (gettype($celda) == "array") {
                 $temBodyStyle = $bodyStyle;
+                $curriceActive = array_key_exists('currency', $celda);
+                $mergeYActive = array_key_exists('mergeY', $celda);
                 if (array_key_exists('mergeX', $celda)) {
                     $fillter = false;
                     $indexXfinal = Coordinate::stringFromColumnIndex($indexXtemp + $celda['mergeX']);
                     $sheet->mergeCells($columIndex . ($indexY + 1) . ':' . $indexXfinal . ($indexY + 1));
                     $indexXtemp += $celda['mergeX'];
+                }
+                if (array_key_exists('mergeY', $celda)) {
+                    $fillter = false;
+                    $sheet->mergeCells($columIndex . ($indexY + 1 - $celda['mergeY']) . ":" . $columIndex . ($indexY + 1));
                 }
 
                 if ($indice && isset($celda['indice']) && !$celda['indice'] && $tempIndexRow) { // Si encuentra la bandera [indice], elimina directamente el index de la fila y reestablece el contador.
@@ -210,15 +236,24 @@ function CreateExcel(Worksheet $sheet, $dataArraySheet): void
                 if (isset($celda['align']))
                     $temBodyStyle['alignment']['horizontal'] = ($celda['align'] == 'left') ? Alignment::HORIZONTAL_LEFT : Alignment::HORIZONTAL_RIGHT;
 
-                if (array_key_exists('currency', $celda)) {// Aplica formato de moneda (MXN) manteniendo el valor como numérico para permitir cálculos en Excel.
-                    $sheet->setCellValueExplicit($columIndex . $indexY + 1, $celda[0], DataType::TYPE_NUMERIC);
-                    $sheet->getStyle($columIndex . $indexY + 1)
-                        ->getNumberFormat()
-                        ->setFormatCode('"$ "#,##0.00');
-                } else {
+
+                if (!$mergeYActive && !$curriceActive) {
                     $sheet->setCellValue($columIndex . $indexY + 1, $celda[0]);
+                    $sheet->getStyle($columIndex . $indexY + 1)->applyFromArray($temBodyStyle);
+                } else {
+                    if ($curriceActive) {// Aplica formato de moneda (MXN) manteniendo el valor como numérico para permitir cálculos en Excel.
+                        currice($columIndex, $indexY, $celda[0]);
+                        $sheet->getStyle($columIndex . $indexY + 1)->applyFromArray($temBodyStyle);
+                    }
+                    if ($mergeYActive) {
+                        if ($curriceActive) {
+                            currice($columIndex, ($indexY - $celda['mergeY']), $celda[0]);
+                        } else {
+                            $sheet->setCellValue($columIndex . ($indexY + 1 - $celda['mergeY']), $celda[0]);
+                        }
+                        $sheet->getStyle($columIndex . ($indexY + 1 - $celda['mergeY']))->applyFromArray($temBodyStyle);
+                    }
                 }
-                $sheet->getStyle($columIndex . $indexY + 1)->applyFromArray($temBodyStyle);
             }
         }
         $colorRegitrosTable = !$colorRegitrosTable;
@@ -228,7 +263,6 @@ function CreateExcel(Worksheet $sheet, $dataArraySheet): void
         $positionY = count($dataArraySheet) + 2;
         $sheet->setAutoFilter("A2:$finalHeaderGlobal$positionY");
     }
-
     $highestColumn = $sheet->getHighestColumn();
     foreach (range('A', $highestColumn) as $col) {
         $sheet->getColumnDimension($col)->setAutoSize(true);
@@ -260,11 +294,11 @@ try {
                         $nameSheet = iconv('UTF-8', 'ASCII//TRANSLIT', $nameSheet);
                         $nameSheet = preg_replace('/[\\\\\/:*?\[\]]/', '_', $nameSheet);
                         if ($indiceSheet) {
-                            $sheet = new Worksheet($spreadsheet, $sheetName);
+                            $sheet = new Worksheet($spreadsheet, $nameSheet);
                             $spreadsheet->addSheet($sheet, $indiceSheet);
                         } else {
                             $sheet = $spreadsheet->getActiveSheet();
-                            $sheet->setTitle($sheetName);
+                            $sheet->setTitle($nameSheet);
                         }
                         CreateExcel($sheet, $dataExcel);
                         $indiceSheet++;
@@ -279,6 +313,7 @@ try {
     }
 
     $writer = new Xlsx($spreadsheet);
+    $nameFile = utf8_decode($nameFile);
     $nameFile = $nameFile . date('Y-m-d') . '.xlsx';
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header("Content-Disposition: attachment; filename=\"$nameFile\"");
@@ -288,4 +323,6 @@ try {
     $writer->save('php://output');
 } catch (PhpSpreadsheetException $errorPhpSheet) {
     ReportServer500($errorPhpSheet->getMessage(), $errorPhpSheet->getCode());
+} catch (Exception $e) {
+    reportServer500($e->getMessage(), $e->getCode());
 }

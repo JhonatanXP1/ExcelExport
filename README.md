@@ -94,7 +94,7 @@ El **primer array** dentro de cada bloque de datos se interpreta como la fila de
 ### Estilo de encabezado
 
 Los encabezados se renderizan automáticamente con:
-- Texto en **negrita**, tamaño 16, color blanco.
+- Texto en **negrita**, tamaño 13, color blanco.
 - Fondo azul corporativo (`#4472C4`).
 - Texto centrado horizontal y verticalmente.
 
@@ -136,11 +136,12 @@ Cuando una celda necesita estilo o comportamiento extra, se define como array. E
 | Propiedad   | Tipo     | Descripción |
 |-------------|----------|-------------|
 | `mergeX`    | `int`    | Fusiona la celda con las columnas siguientes. El valor indica cuántas columnas adicionales se incluyen. |
+| `mergeY`    | `int`    | Fusiona la celda con las filas anteriores. El valor indica cuántas filas hacia arriba se incluyen en la unión. Se puede combinar con `currency`. Desactiva el autofiltro (`fillter`). |
 | `strong`    | `bool`   | Si es `true`, aplica negrita al texto. |
 | `color`     | `string` | Color del texto en hexadecimal sin `#` (ej. `"FF0000"` para rojo). |
 | `fillColor` | `string` | Color de fondo de la celda en hexadecimal sin `#` (ej. `"FFFF00"` para amarillo). |
 | `align`     | `string` | Alineación horizontal del texto. Valores: `"left"` o `"right"`. Por defecto: centrado. |
-| `currency`  | `mixed`  | Formatea la celda como moneda MXN (`$ #,##0.00`). El valor se almacena como número para permitir cálculos en Excel. |
+| `currency`  | `mixed`  | Formatea la celda como moneda MXN (`$ #,##0.00`). El valor se almacena como número para permitir cálculos en Excel. **El valor debe ser numérico**; si no lo es, el servidor responde con `HTTP 500` indicando la hoja, posición y valor que causó el error. Se puede combinar con `mergeY`. |
 | `indice`    | `bool`   | Si es `false` y la opción global `indice` está activa, suprime el número de fila para esa celda específica y no lo cuenta en el conteo. |
 
 ### Ejemplo completo del cuerpo
@@ -171,9 +172,41 @@ Cuando una celda necesita estilo o comportamiento extra, se define como array. E
     [
         "Notas adicionales",
         "align"     => "left"    // Texto alineado a la izquierda
+    ],
+    [
+        "Total acumulado",
+        "mergeY"    => 2,        // Fusiona esta celda con las 2 filas anteriores de la misma columna
+        "currency"  => true      // Se puede combinar con mergeY
     ]
 ]
 ```
+
+### Fusión vertical de celdas (`mergeY`)
+
+Fusiona la celda actual con las filas anteriores de la misma columna. El valor indica cuántas filas hacia arriba se incluyen en la unión. Es útil para agrupar visualmente bloques de datos.
+
+> El valor del array debe ser siempre el primer elemento (`$celda[0]`). El valor y el estilo se aplican sobre la celda superior del rango fusionado.
+
+```php
+// Fila 1 del grupo
+["Grupo A", "100", "200"],
+// Fila 2: la celda de la columna 1 se fusiona con la fila anterior
+[
+    ["Grupo A", "mergeY" => 1],  // Se une con la fila de arriba en esa columna
+    "150",
+    "250"
+]
+```
+
+`mergeY` se puede combinar con `currency` para fusionar celdas numéricas con formato de moneda:
+
+```php
+[
+    ["1500.00", "mergeY" => 1, "currency" => true]
+]
+```
+
+> **Nota:** Usar `mergeY` desactiva el autofiltro (`fillter`) automáticamente.
 
 ---
 
@@ -197,13 +230,13 @@ Para omitir el número en una fila específica (por ejemplo, una fila de subtota
 
 Cuando `"fillter": true` se incluye en el JSON raíz, Excel agrega controles de filtro en la fila de encabezados, permitiendo filtrar los datos directamente desde la aplicación.
 
-> El autofiltro se desactiva automáticamente si cualquier celda del encabezado o del cuerpo usa `mergeX`, ya que Excel no admite filtros con celdas combinadas.
+> El autofiltro se desactiva automáticamente si cualquier celda del encabezado o del cuerpo usa `mergeX` o `mergeY`, ya que Excel no admite filtros con celdas combinadas.
 
 ---
 
 ## Comportamiento automático del archivo generado
 
-- El nombre final del archivo es: `{nameFile}{YYYY-MM-DD}.xlsx`
+- El nombre final del archivo es: `{nameFile}{YYYY-MM-DD}.xlsx`. El nombre se decodifica con `utf8_decode` antes de generarse, por lo que se recomienda que `nameFile` esté correctamente codificado en UTF-8.
 - Las columnas se ajustan automáticamente al contenido (`autoSize`).
 - La fila de encabezados de tabla queda **congelada** (freeze pane en fila 3), permitiendo desplazarse por los datos sin perder de vista los encabezados.
 - El encabezado global (`title`) ocupa la fila 1 y abarca todas las columnas de la tabla.
@@ -223,6 +256,13 @@ Los errores más comunes son:
 - JSON vacío o mal formado.
 - `data` nulo o sin contenido.
 - Excepciones internas de PhpSpreadsheet.
+- Valor no numérico en una celda con `currency`. El mensaje indica la hoja, la posición `[fila][columna]` y el valor recibido:
+  ```
+  error en el servidor:  -
+  the sheet:{nombre_hoja}
+  Position:[{fila}][{columna}]
+  value:{valor} is not numeric
+  ```
 
 ---
 
