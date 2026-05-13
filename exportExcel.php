@@ -244,8 +244,8 @@ try {
     if (!empty($datos)) {
         if (gettype($datos) == "array") {
             $spreadsheet->getProperties()
-                ->setCreator("Educapp")
-                ->setLastModifiedBy("Educapp")
+                ->setCreator("Ing. Jhonatan")
+                ->setLastModifiedBy("Ing. Jhonatan")
                 ->setSubject("Reportes");
 
             if ($datos['data'] != null) {
